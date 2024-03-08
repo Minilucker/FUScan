@@ -2,7 +2,7 @@
 
 "Simple" Python script to check which extension is accepted by a HTML file upload form.
 
-```bash
+```
 usage: File upload scanner [-h] -t TARGET -w WORDLIST [-c COOKIE]
                            {response,path} ...
 
