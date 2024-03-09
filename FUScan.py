@@ -5,6 +5,8 @@ import asyncio
 import argparse
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+from rich import print
+from rich.progress import track 
 
 def init_arguments():
     parser = argparse.ArgumentParser(
@@ -56,9 +58,12 @@ def init_session(target, cookie) -> AsyncClient:
 
 async def validate(validator, client, results: list):
     if not type(results) == dict:
-        for ext in results:
-            print(validator)
-            response = await client.get(f"{validator}")
+        success_list = list()
+        for ext in track(results, description="[white]Fuzzing the resulting file ..."):
+            response = await client.get(f"{validator}/file{ext}")
+            if response.status_code == 200:
+                success_list.append(ext)
+        return success_list
 
     else:
         for codematch in results:
@@ -78,10 +83,11 @@ async def send_probes(wordlist, parameters, upload_path, client: AsyncClient):
         data[parameter.get('name')] = "dummy"
     wl = open(wordlist, 'r').readlines()
     code_results = list()
-    for ext in wl:
+    for ext in track(wl, description="[white]Fuzzing file upload form ..."):
         ext = ext.strip()
-        file ={fileParam: (f'file{ext}')}
+        file ={fileParam: (f'file{ext}', open('dummyfile', 'rb'))}
         resp = await client.post(upload_path, files=file, data=data)
+        
         code_results.append({"ext": ext, "code": resp.status_code})
     return code_results
 
@@ -97,13 +103,15 @@ async def main():
     results = await send_probes(wordlist_path, secondary_params, upload_path, client)
     match validation_mode:
         case "response":
-            await validate(validator=results, client=client, results=results)
+            successful_ext = await validate(validator=results, client=client, results=results)
         case "path":
-            results = list(map(lambda c: c.pop('ext', None), results))
-            print(results)
-            await validate(validator=validator, client=client, results=results)
-    
-    return
+            results = list(map(lambda dict: dict.pop('ext', None), results))
+            successful_ext = await validate(validator=validator, client=client, results=results)
+    print()
+    if len(successful_ext) == 0:
+        print("[red][-] No valid extension found")
+    for success in successful_ext:
+        print(f"[green][+] Valid extension found : {success}[/green]")
 
 if __name__ == '__main__':
     asyncio.run(main())

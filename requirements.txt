@@ -1,0 +1,6 @@
+httpx
+asyncio
+argparse
+urllib3
+bs4
+rich
