@@ -37,7 +37,15 @@ async def get_form_parameters(form_url, client: AsyncClient):
     page = await client.get(form_url)
     soup = BeautifulSoup(page.text, "html.parser")
     form = soup.find("form", attrs={"method": "POST"})
-    file_parameter = form.find("input")
+    input_list = form.find_all("input")
+    upload_path = form.get("action")
+    parameters_list = []
+    for parameter in input_list:
+        param = {"type": parameter.get('type'),"name": parameter.get('name')}
+        parameters_list.append(param)
+    return parameters_list, upload_path
+
+    
 
 def init_session(target, cookie) -> AsyncClient:
     if cookie:
@@ -46,6 +54,36 @@ def init_session(target, cookie) -> AsyncClient:
         return AsyncClient(base_url=target, cookies={cookie_key: cookie_value})
     return AsyncClient(base_url=target)
 
+async def validate(validator, client, results: list):
+    if not type(results) == dict:
+        for ext in results:
+            print(validator)
+            response = await client.get(f"{validator}")
+
+    else:
+        for codematch in results:
+            valid_extensions = list()
+            if (codematch.get("code") == validator):
+                valid_extensions.append(codematch.get("ext"))
+        return valid_extensions
+
+
+async def send_probes(wordlist, parameters, upload_path, client: AsyncClient):
+    data = dict()
+    for parameter in parameters:
+        if parameter.get("type") == "file":
+            fileParam = parameter.get("name")
+            parameters.remove(parameter)
+            continue
+        data[parameter.get('name')] = "dummy"
+    wl = open(wordlist, 'r').readlines()
+    code_results = list()
+    for ext in wl:
+        ext = ext.strip()
+        file ={fileParam: (f'file{ext}')}
+        resp = await client.post(upload_path, files=file, data=data)
+        code_results.append({"ext": ext, "code": resp.status_code})
+    return code_results
 
 async def main():
 
@@ -55,8 +93,16 @@ async def main():
     form_url = parsed_url.path
     
     client = init_session(base_url, cookie)
-    await get_form_parameters(form_url, client)
-
+    secondary_params, upload_path = await get_form_parameters(form_url, client)
+    results = await send_probes(wordlist_path, secondary_params, upload_path, client)
+    match validation_mode:
+        case "response":
+            await validate(validator=results, client=client, results=results)
+        case "path":
+            results = list(map(lambda c: c.pop('ext', None), results))
+            print(results)
+            await validate(validator=validator, client=client, results=results)
+    
     return
 
 if __name__ == '__main__':
